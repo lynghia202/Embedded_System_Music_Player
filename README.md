@@ -49,7 +49,7 @@
  #####   3.	Thư viện (DFPlayer):
         -	Giải thích được cấu trúc của một gói tin (packet) lệnh của DFPlayer (Start byte, Command, Checksum, End byte).
         -	Nắm rõ hàm DFPlayer_SendCmd là hàm cốt lõi để gửi 1 gói tin.
-### 	NGHĨA: Thiết kế hệ thống
+### 4.	NGHĨA: Thiết kế hệ thống
 #### Task chính: vPlayerLogicTask và toàn bộ main.c (sự tích hợp).
 #### Thư viện phụ trách: main.c (file chính)
 #### Những gì cần học và nắm rõ:
