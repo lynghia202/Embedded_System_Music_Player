@@ -62,5 +62,5 @@
         -	Hiểu prvSetupHardware cấu hình những gì (bật clock cho GPIOA, GPIOB, AFIO, USART1, I2C1).
 ##### 3.	Thư viện (main.c):
         -	Nắm rõ logic của vPlayerLogicTask: nó chờ phím (xQueueReceive), dùng switch...case để quyết định, sau đó phân phối công việc đi (gọi SafeDFPlayer_... và SendToLcd).
-	Ghép code của 3 người kia lại và đảm bảo nó chạy đúng.
+		-	Ghép code của 3 người kia lại và đảm bảo nó chạy đúng.
 
