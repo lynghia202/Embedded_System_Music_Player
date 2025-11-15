@@ -1,7 +1,7 @@
 # PHÂN CHIA CÔNG VIỆC – BÀI TẬP LỚN HỆ THỐNG NHÚNG
 ## Công việc chung cho tất cả: 
-Tất cả cần phải nắm được luồng hoạt động chi tiết sau:
-1.	Phím bấm -> kích hoạt Ngắt EXTI.
+    Tất cả cần phải nắm được luồng hoạt động chi tiết sau:
+1. Phím bấm -> kích hoạt Ngắt EXTI.
 2.	ISR (Hàm ngắt) -> gửi Semaphore -> đánh thức vKeypadScanTask.
 3.	vKeypadScanTask -> đọc phím, gửi vào Queue Phím (g_keypadQueue).
 4.	vPlayerLogicTask -> nhận phím từ Queue, xử lý logic.
@@ -9,7 +9,7 @@ Tất cả cần phải nắm được luồng hoạt động chi tiết sau:
 6.	vPlayerLogicTask -> gửi lệnh hiển thị vào Queue LCD (g_lcdQueue).
 7.	vLcdDisplayTask -> nhận lệnh từ Queue, hiển thị (qua g_i2cMutex).
 8.	vIdleMonitorTask -> kiểm tra thời gian, tắt/bật đèn nền (qua g_i2cMutex).
-II.	Phân công công việc
+## Phân công công việc
 1.	ĐỨC: Keypad 4x4 & Ngắt
 •	Task chính: vKeypadScanTask
 •	Thư viện phụ trách: keypad_4x4.c và keypad_4x4.h
