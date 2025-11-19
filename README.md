@@ -8,7 +8,6 @@
         5.	vPlayerLogicTask -> gửi lệnh cho DFPlayer (qua g_uartMutex).
         6.	vPlayerLogicTask -> gửi lệnh hiển thị vào Queue LCD (g_lcdQueue).
         7.	vLcdDisplayTask -> nhận lệnh từ Queue, hiển thị (qua g_i2cMutex).
-        8.	vIdleMonitorTask -> kiểm tra thời gian, tắt/bật đèn nền (qua g_i2cMutex).
 ## Phân công công việc
 ### 1.	ĐỨC: Keypad 4x4 & Ngắt
 #### 	Task chính: vKeypadScanTask
