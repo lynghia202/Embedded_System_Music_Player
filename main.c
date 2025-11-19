@@ -9,6 +9,7 @@
 #include "lcd_i2c.h"
 #include "keypad_4x4.h"
 #include "dfplayer.h"
+#include "timers.h"
 
 // ==================== HARDWARE CONFIG ====================
 #define DFPLAYER_USART         USART1
@@ -22,7 +23,6 @@
 #define MAX_TRACK_NUMBER       999
 #define DFPLAYER_CMD_DELAY_MS  120
 #define KEYPAD_DEBOUNCE_MS     80
-#define LCD_UPDATE_RATE_MS     300
 #define IDLE_TIMEOUT_MS        30000
 
 // ==================== FREERTOS OBJECTS ====================
@@ -31,8 +31,8 @@ static QueueHandle_t g_lcdQueue = NULL;
 static SemaphoreHandle_t g_i2cMutex = NULL;
 static SemaphoreHandle_t g_uartMutex = NULL;
 static SemaphoreHandle_t g_keypadSemaphore = NULL;
+static TimerHandle_t g_backlightTimer = NULL;
 
-static TickType_t lastActivityTime = 0;
 static volatile uint8_t isLcdBacklightOn = 1; // volatile for thread safety
 
 // ==================== DATA STRUCTURES ====================
@@ -60,6 +60,8 @@ static void vLcdDisplayTask(void *pvParameters);
 static void vPlayerLogicTask(void *pvParameters);
 static void vIdleMonitorTask(void *pvParameters);
 static void SendToLcd(const char* line1, const char* line2);
+static void disable_external_devices(void);
+static void vBacklightTimerCallback(TimerHandle_t xTimer);
 static void DisableAllKeypadIRQ(void);
 static void EnableAllKeypadIRQ(void);
 static void SafeDFPlayer_Next(void);
@@ -68,6 +70,31 @@ static void SafeDFPlayer_Pause(void);
 static void SafeDFPlayer_Resume(void);
 static void SafeDFPlayer_PlayTrack(uint16_t track);
 static void SafeDFPlayer_SetVolume(uint8_t volume);
+
+// ==================== TIMER CALLBACK ====================
+static void vBacklightTimerCallback(TimerHandle_t xTimer) {
+    // Ham nay duoc goi tu dong khi het 30s
+    if (isLcdBacklightOn) {
+        if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(100)) == pdPASS) {
+            LCD_BacklightOff(); // Tat backlight
+            xSemaphoreGive(g_i2cMutex);
+            isLcdBacklightOn = 0;
+        }
+    }
+}
+
+// ==================== HAM BAT BACKLIGHT ====================
+static void WakeUpBacklight(void) {
+    xTimerReset(g_backlightTimer, 0); //reset lai timer
+		//Neu backlight dang tat thi bat len
+    if (isLcdBacklightOn == 0) {
+        if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(100)) == pdPASS) {
+            LCD_BacklightOn();
+            xSemaphoreGive(g_i2cMutex);
+            isLcdBacklightOn = 1;
+        }
+    }
+}
 
 // ==================== LCD DISPLAY TASK ====================
 static void vLcdDisplayTask(void *pvParameters) {
@@ -82,7 +109,7 @@ static void vLcdDisplayTask(void *pvParameters) {
     }
     
     for (;;) {
-        if (xQueueReceive(g_lcdQueue, &msg, pdMS_TO_TICKS(LCD_UPDATE_RATE_MS)) == pdPASS) {
+        if (xQueueReceive(g_lcdQueue, &msg, portMAX_DELAY) == pdPASS) {
             
             if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(100)) == pdPASS) {
                 
@@ -111,15 +138,11 @@ static void vLcdDisplayTask(void *pvParameters) {
 // ==================== SEND TO LCD ====================
 static void SendToLcd(const char* line1, const char* line2) {
     LcdMessage_t msg;
-    
     strncpy(msg.line1, line1, 16);
     msg.line1[16] = '\0';
-    
     strncpy(msg.line2, line2, 16);
     msg.line2[16] = '\0';
-    
     xQueueOverwrite(g_lcdQueue, &msg);
-    lastActivityTime = xTaskGetTickCount();
 }
 
 // ==================== SAFE DFPLAYER COMMANDS ====================
@@ -183,11 +206,14 @@ static void vPlayerLogicTask(void *pvParameters) {
         .currentTrack = 1,
         .state = PLAYER_STOPPED
     };
+		WakeUpBacklight();
 		SendToLcd("STM32 Player", "Booting...");
 		vTaskDelay(pdMS_TO_TICKS(2000)); 
+		
     SafeDFPlayer_SetVolume(status.volume);
     SendToLcd("STM32 Player", "Ready...");
 		vTaskDelay(pdMS_TO_TICKS(1500)); 
+		
     char line1[17], line2[17];
     snprintf(line1, 17, "Track: %03d", status.currentTrack);
     snprintf(line2, 17, "Vol:%02d State:---", status.volume);
@@ -195,17 +221,11 @@ static void vPlayerLogicTask(void *pvParameters) {
 
     for (;;) {
         if (xQueueReceive(g_keypadQueue, &key, portMAX_DELAY) == pdPASS) {
-            
-            lastActivityTime = xTaskGetTickCount();
+            WakeUpBacklight();
             needsDelayBeforeUpdate = 0;
-            
-            if (isLcdBacklightOn == 0) {
-                continue;
-            }
 
             if (bufferIndex > 0) {
-                // ====== CH? Ð? CH?N BÀI ======
-                
+                // ====== CHE DO CHON BAI ======              
                 switch (key) {
                     case '0': case '1': case '2': case '3': case '4':
                     case '5': case '6': case '7': case '8': case '9':
@@ -241,7 +261,7 @@ static void vPlayerLogicTask(void *pvParameters) {
                         break;
 
                     case 'C': // BACKSPACE - FIXED
-                        if (bufferIndex > 0) { // Ki?m tra ð? tránh underflow
+                        if (bufferIndex > 0) { // Ki?m tra ?? tr?nh underflow
                             bufferIndex--;
                             trackBuffer[bufferIndex] = '\0';
                             
@@ -266,7 +286,7 @@ static void vPlayerLogicTask(void *pvParameters) {
                 }
 
             } else {
-                // ====== CH? Ð? PHÁT NH?C ======
+                // ====== CHE DO PHAT NHAC ======
                 
                 switch (key) {
                     case '0': case '1': case '2': case '3': case '4':
@@ -346,12 +366,12 @@ static void vPlayerLogicTask(void *pvParameters) {
                 }
             }
             
-            // Delay n?u c?n
+            // Delay neu can
             if (needsDelayBeforeUpdate) {
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
             
-            // C?p nh?t màn h?nh chính
+            // Cap nhat man hinh chinh
             if (bufferIndex > 0) {
                 snprintf(line1, 17, "Select: %s_", trackBuffer);
                 snprintf(line2, 17, "D=Play, C=Back");
@@ -406,35 +426,6 @@ static void vKeypadScanTask(void *pvParameters) {
     }
 }
 
-// ==================== IDLE MONITOR TASK ====================
-static void vIdleMonitorTask(void *pvParameters) {
-    TickType_t currentTime;
-    
-    for (;;) {
-        currentTime = xTaskGetTickCount();
-        
-        if ((currentTime - lastActivityTime) > pdMS_TO_TICKS(IDLE_TIMEOUT_MS)) {
-            if (isLcdBacklightOn) {
-                if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(100)) == pdPASS) {
-                    LCD_BacklightOff();// Turn off backlight
-                    xSemaphoreGive(g_i2cMutex);
-                    isLcdBacklightOn = 0;
-                }
-            }
-        } else {
-            if (!isLcdBacklightOn) {
-                if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(100)) == pdPASS) {
-                   LCD_BacklightOn(); // Turn on backlight
-                    xSemaphoreGive(g_i2cMutex);
-                    isLcdBacklightOn = 1;
-                }
-            }
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
 // ==================== HARDWARE SETUP ====================
 static void prvSetupHardware(void) {
     RCC_APB2PeriphClockCmd(DFPLAYER_GPIO_RCC | RCC_APB2Periph_GPIOA | 
@@ -459,6 +450,17 @@ static void prvSetupHardware(void) {
     Keypad_EXTI_Init();
 }
 
+static void disable_external_devices(void) {
+		RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, DISABLE);
+		RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 | 
+                       RCC_APB2Periph_SPI1 | RCC_APB2Periph_TIM1, DISABLE);
+
+		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2 | RCC_APB1Periph_TIM3 | 
+                       RCC_APB1Periph_TIM4 | RCC_APB1Periph_SPI2 | 
+                       RCC_APB1Periph_DAC | RCC_APB1Periph_WWDG, DISABLE);
+       
+		RCC_APB1PeriphClockCmd(RCC_APB1Periph_USB, DISABLE);
+}
 // ==================== INTERRUPT HANDLERS ====================
 static void Keypad_EXTI_Handler(uint32_t EXTI_Line, IRQn_Type IRQn) {
     if (EXTI_GetITStatus(EXTI_Line) != RESET) {
@@ -491,25 +493,24 @@ void EXTI3_IRQHandler(void) {
 // ==================== MAIN ====================
 int main(void) {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
-
+		disable_external_devices();
     prvSetupHardware();
-
-    g_keypadQueue = xQueueCreate(10, sizeof(char));
+		g_keypadQueue = xQueueCreate(10, sizeof(char));
     g_lcdQueue = xQueueCreate(1, sizeof(LcdMessage_t));
     g_i2cMutex = xSemaphoreCreateMutex();
     g_uartMutex = xSemaphoreCreateMutex();
+		g_backlightTimer = xTimerCreate("Backlight", 
+																		pdMS_TO_TICKS(IDLE_TIMEOUT_MS), 
+																		pdFALSE, (void*)0, 
+																		vBacklightTimerCallback);
     g_keypadSemaphore = xSemaphoreCreateBinary();
 
     configASSERT(g_keypadQueue && g_lcdQueue && g_i2cMutex && 
-                 g_uartMutex && g_keypadSemaphore);
-
-    lastActivityTime = xTaskGetTickCount();
+                 g_uartMutex && g_keypadSemaphore && g_backlightTimer);
 
     xTaskCreate(vPlayerLogicTask, "Logic", 512, NULL, 2, NULL);
     xTaskCreate(vLcdDisplayTask, "LCD", 256, NULL, 1, NULL);
     xTaskCreate(vKeypadScanTask, "Keypad", 128, NULL, 3, NULL);
-    xTaskCreate(vIdleMonitorTask, "Idle", 128, NULL, 1, NULL);
-
     vTaskStartScheduler();
     for (;;);
 }
