@@ -24,7 +24,7 @@
  #####   3.	Thư viện (Keypad):
         -	Giải thích được logic của Keypad_Configure_For_Scan và Keypad_Configure_For_Interrupt (sự tráo đổi giữa Input/Output của Hàng và Cột).
 ### 2.	NAM: Hiển thị & Giao tiếp I2C 
-#### Task chính: vLcdDisplayTask và vIdleMonitorTask (vì cả hai cùng đụng đến LCD).
+#### Task chính: vLcdDisplayTask.
 #### Thư viện phụ trách: lcd_i2c.c và lcd_i2c.h
 #### Những gì cần học và nắm rõ:
  #####   1.	STM32 (Phần cứng):
@@ -33,6 +33,7 @@
  #####   2.	FreeRTOS (Khái niệm):
         -	Mutex: Đây là trọng tâm. Hiểu 'xSemaphoreCreateMutex'. Phải giải thích được "Race Condition" là gì và tại sao cả vLcdDisplayTask VÀ vIdleMonitorTask đều phải dùng SemaphoreTake(g_i2cMutex) trước khi động vào LCD.
         -	Queue (Hàng đợi): Hiểu xQueueReceive (để nhận LcdMessage_t).
+		- 	Hiểu cơ chế sử dụng Timer mềm của RTOS, bật tắt backlight như thế nào
   #####  3.	Thư viện (LCD):
         -	Giải thích cách thư viện gửi lệnh 4-bit (hàm LCD_SendHalf).
         -	Hiểu LCD_SendCommand (gửi lệnh) và LCD_SendData (gửi ký tự) khác nhau thế nào.
